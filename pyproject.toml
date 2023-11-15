@@ -1,0 +1,11 @@
+[project]
+name = "neopolyp"
+dependencies = [
+    "torch",
+    "torchvision",
+    "torchaudio",
+    "opencv-python",
+    "lightning",
+    "torchsummary",
+    "albumentations"
+]
