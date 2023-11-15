@@ -21,7 +21,6 @@ from torchvision.transforms import Resize, PILToTensor, ToPILImage, Compose, Int
 from collections import OrderedDict
 import wandb
 
-
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device
 # Parameters
@@ -45,8 +44,22 @@ train_accuracy = []
 test_accuracy = []
 valid_accuracy = []
 # Dataloader
-transform = Compose([Resize((800, 1120), interpolation=InterpolationMode.BILINEAR),
-                     PILToTensor()])
+from torchvision.transforms import Compose, Resize, RandomHorizontalFlip, RandomVerticalFlip, RandomRotation, ToTensor
+
+
+transform = Compose([
+    Resize((800, 1120), interpolation=InterpolationMode.BILINEAR),
+    ToTensor()
+])
+
+
+transform = Compose([
+    transform,  # Original transformations
+    RandomHorizontalFlip(p=0.3),  # Augmentation 1
+    RandomVerticalFlip(p=0.3),  # Augmentation 2
+    RandomRotation(degrees=30),  # Augmentation 3
+])
+
 class UNetDataClass(Dataset):
     def __init__(self, images_path, masks_path, transform):
         super(UNetDataClass, self).__init__()
@@ -92,135 +105,123 @@ train_set, valid_set = random_split(unet_dataset,
                                      int(valid_size * len(unet_dataset))])
 train_dataloader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
 valid_dataloader = DataLoader(valid_set, batch_size=batch_size, shuffle=True)
-
 # Model
-# Encoder Block
-class encoder_block(nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super(encoder_block, self).__init__()
-        
-        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding='same')
-        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding='same')
-        
-        self.bn1 = nn.BatchNorm2d(out_channels)
-        self.bn2 = nn.BatchNorm2d(out_channels)
-        
+
+
+from torchvision.models import resnet50, ResNet50_Weights
+
+
+class ConvBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, padding=1, kernel_size=3, stride=1, with_nonlinearity=True):
+        super().__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels, padding=padding, kernel_size=kernel_size, stride=stride)
+        self.bn = nn.BatchNorm2d(out_channels)
         self.relu = nn.ReLU()
-        self.dropout = nn.Dropout(p=0.3)
-        self.max_pool = nn.MaxPool2d(kernel_size=2, stride=2)
-        
+        self.with_nonlinearity = with_nonlinearity
+
     def forward(self, x):
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-        
-        x = self.dropout(x)
-        
-        x = self.conv2(x)
-        x = self.bn2(x)
-        x = self.relu(x)
-        
-        next_layer = self.max_pool(x)
-        skip_layer = x
-        
-        return next_layer, skip_layer
-# Decoder block
-class decoder_block(nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super(decoder_block, self).__init__()
-        
-        self.transpose_conv = nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2)
-        
-        self.conv1 = nn.Conv2d(2 * out_channels, out_channels, kernel_size=3, stride=1, padding='same')
-        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding='same')
-        
-        self.bn1 = nn.BatchNorm2d(out_channels)
-        self.bn2 = nn.BatchNorm2d(out_channels)
-        
-        self.relu = nn.ReLU() 
-        self.dropout = nn.Dropout(p=0.3)
-    
-    def forward(self, x, skip_layer):
-        x = self.transpose_conv(x)
-        x = torch.cat([x, skip_layer], axis=1)
-        
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-        
-        x = self.dropout(x)
-        
-        x = self.conv2(x)
-        x = self.bn2(x)
-        x = self.relu(x)
-        
+        x = self.conv(x)
+        x = self.bn(x)
+        if self.with_nonlinearity:
+            x = self.relu(x)
         return x
-    
-#Bottle neck
-class bottleneck_block(nn.Module):
+
+
+class Bridge(nn.Module):
     def __init__(self, in_channels, out_channels):
-        super(bottleneck_block, self).__init__()
-        
-        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=1, padding='same')
-        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding='same')
-        
-        self.bn1 = nn.BatchNorm2d(out_channels)
-        self.bn2 = nn.BatchNorm2d(out_channels)
-        
-        self.relu = nn.ReLU()
-        self.dropout = nn.Dropout(p=0.3)
-        
+        super().__init__()
+        self.bridge = nn.Sequential(
+            ConvBlock(in_channels, out_channels),
+            ConvBlock(out_channels, out_channels)
+        )
+
     def forward(self, x):
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-        
-        x = self.dropout(x)
-        
-        x = self.conv2(x)
-        x = self.bn2(x)
-        x = self.relu(x)
-        
+        return self.bridge(x)
+
+
+class UpsampleBlock(nn.Module):
+
+    def __init__(self, in_channels, out_channels, up_conv_in_channels=None, up_conv_out_channels=None,
+                 upsampling_method="conv_transpose"):
+        super().__init__()
+
+        if up_conv_in_channels is None:
+            up_conv_in_channels = in_channels
+        if up_conv_out_channels is None:
+            up_conv_out_channels = out_channels
+
+        if upsampling_method == "conv_transpose":
+            self.upsample = nn.ConvTranspose2d(up_conv_in_channels, up_conv_out_channels, kernel_size=2, stride=2)
+        elif upsampling_method == "bilinear":
+            self.upsample = nn.Sequential(
+                nn.Upsample(mode='bilinear', scale_factor=2),
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1)
+            )
+        self.conv_block_1 = ConvBlock(in_channels, out_channels)
+        self.conv_block_2 = ConvBlock(out_channels, out_channels)
+
+    def forward(self, up_x, down_x):
+        x = self.upsample(up_x)
+        x = torch.cat([x, down_x], 1)
+        x = self.conv_block_1(x)
+        x = self.conv_block_2(x)
         return x
-    
-# Unet model
-class UNet(nn.Module):
-    def __init__(self, n_class=3):
-        super(UNet, self).__init__()
-        # Encoder blocks
-        self.enc1 = encoder_block(3, 64)
-        self.enc2 = encoder_block(64, 128)
-        self.enc3 = encoder_block(128, 256)
-        self.enc4 = encoder_block(256, 512)
-        
-        # Bottleneck block
-        self.bottleneck = bottleneck_block(512, 1024)
-        
-        # Decoder blocks
-        self.dec1 = decoder_block(1024, 512)
-        self.dec2 = decoder_block(512, 256)
-        self.dec3 = decoder_block(256, 128)
-        self.dec4 = decoder_block(128, 64)
-        
-        # 1x1 convolution
-        self.out = nn.Conv2d(64, n_class, kernel_size=1, padding='same')
-        
-    def forward(self, image):
-        n1, s1 = self.enc1(image)
-        n2, s2 = self.enc2(n1)
-        n3, s3 = self.enc3(n2)
-        n4, s4 = self.enc4(n3)
-        
-        n5 = self.bottleneck(n4)
-        
-        n6 = self.dec1(n5, s4)
-        n7 = self.dec2(n6, s3)
-        n8 = self.dec3(n7, s2)
-        n9 = self.dec4(n8, s1)
-        
-        output = self.out(n9)
-        
-        return output
+
+
+class Resnet50Unet(nn.Module):
+    DEPTH = 6
+
+    def __init__(self, n_classes=2):
+        super().__init__()
+        resnet = resnet50(weights=ResNet50_Weights.DEFAULT)
+        down_blocks = []
+        up_blocks = []
+        self.input_block = nn.Sequential(*list(resnet.children()))[:3]
+        self.input_pool = list(resnet.children())[3]
+        for bottleneck in list(resnet.children()):
+            if isinstance(bottleneck, nn.Sequential):
+                down_blocks.append(bottleneck)
+        self.down_blocks = nn.ModuleList(down_blocks)
+        self.bridge = Bridge(2048, 2048)
+        up_blocks.append(UpsampleBlock(2048, 1024))
+        up_blocks.append(UpsampleBlock(1024, 512))
+        up_blocks.append(UpsampleBlock(512, 256))
+        up_blocks.append(UpsampleBlock(in_channels=128 + 64, out_channels=128,
+                                       up_conv_in_channels=256, up_conv_out_channels=128))
+        up_blocks.append(UpsampleBlock(in_channels=64 + 3, out_channels=64,
+                                       up_conv_in_channels=128, up_conv_out_channels=64))
+
+        self.up_blocks = nn.ModuleList(up_blocks)
+
+        self.out = nn.Conv2d(64, n_classes, kernel_size=1, stride=1)
+
+    def forward(self, x, with_output_feature_map=False):
+        pre_pools = dict()
+        pre_pools["layer_0"] = x
+        x = self.input_block(x)
+        pre_pools["layer_1"] = x
+        x = self.input_pool(x)
+
+        for i, block in enumerate(self.down_blocks, 2):
+            x = block(x)
+            if i == (Resnet50Unet.DEPTH - 1):
+                continue
+            pre_pools[f"layer_{i}"] = x
+
+        x = self.bridge(x)
+
+        for i, block in enumerate(self.up_blocks, 1):
+            key = f"layer_{Resnet50Unet.DEPTH - 1 - i}"
+            x = block(x, pre_pools[key])
+        output_feature_map = x
+        x = self.out(x)
+        del pre_pools
+        if with_output_feature_map:
+            return x, output_feature_map
+        else:
+            return x
+
+
 # Loss function
 class CEDiceLoss(nn.Module):
     def __init__(self, weights) -> None:
@@ -273,7 +274,6 @@ class CEDiceLoss(nn.Module):
     
 # Training
 
-#Initialize weights
 def weights_init(model):
     if isinstance(model, nn.Linear):
         # Xavier Distribution
@@ -290,7 +290,7 @@ def load_model(model, optimizer, path):
     model.load_state_dict(checkpoint["model"])
     optimizer.load_state_dict(checkpoint['optimizer'])
     return model, optimizer
-# Train model
+
 # Train function for each epoch
 def train(train_dataloader, valid_dataloader,learing_rate_scheduler, epoch, display_step):
     print(f"Start epoch #{epoch+1}, learning rate for this epoch: {learing_rate_scheduler.get_last_lr()}")
@@ -349,17 +349,11 @@ def test(dataloader):
             test_loss += targets.size(0)
             correct += torch.sum(pred == targets).item()
     return 100.0 * correct / test_loss
-model = UNet()
-# model.apply(weights_init)
-# model = nn.DataParallel(model)
-checkpoint = torch.load(pretrained_path)
 
-new_state_dict = OrderedDict()
-for k, v in checkpoint['model'].items():
-    name = k[7:] # remove `module.`
-    new_state_dict[name] = v
-# load params
-model.load_state_dict(new_state_dict)
+
+model = Resnet50Unet(n_classes = 3)
+model.apply(weights_init)
+
 model = nn.DataParallel(model)
 model.to(device)
 
@@ -368,7 +362,7 @@ loss_function = CEDiceLoss(weights)
 
 # Define the optimizer (Adam optimizer)
 optimizer = optim.Adam(params=model.parameters(), lr=learning_rate)
-optimizer.load_state_dict(checkpoint['optimizer'])
+# optimizer.load_state_dict(checkpoint['optimizer'])
 
 # Learning rate scheduler
 learing_rate_scheduler = lr_scheduler.StepLR(optimizer, step_size=4, gamma=0.6)
@@ -376,7 +370,7 @@ save_model(model, optimizer, checkpoint_path)
 wandb.login(
     # set the wandb project where this run will be logged
 #     project= "PolypSegment", 
-    key = "394e21a63511f54c0156f130523a5c9847a3c415",
+    key = "f49e2b5c71203e093d9349c33d5b052b8e9267e8",
 )
 wandb.init(
     project = "PolypSegment"
@@ -419,7 +413,7 @@ plt.xlabel('Epochs')
 plt.ylabel('Loss')
 plt.legend()
 plt.show()
-# Infer**
+**Infer**
 # from torch.jit import load
 # model = UNet()
 # optimizer = optim.Adam(params=model.parameters(), lr=learning_rate)
@@ -434,8 +428,7 @@ plt.show()
 # # load params
 # model.load_state_dict(new_state_dict)
 
-
-# Visualize results**
+**Visualize results**
 for i, (data, label) in enumerate(train_dataloader):
     img = data
     mask = label
@@ -455,9 +448,23 @@ for i in range(4):
     arr[i][1].imshow(F.one_hot(mask[i]).float())
     
     arr[i][2].imshow(F.one_hot(torch.argmax(predict[i], 0).cpu()).float())
-# Create submission
-transform = Compose([Resize((800, 1120), interpolation=InterpolationMode.BILINEAR),
-                     PILToTensor()])
+**Create submission**
+from torchvision.transforms import Compose, Resize, RandomHorizontalFlip, RandomVerticalFlip, RandomRotation, ToTensor
+
+# Original transformation
+transform = Compose([
+    Resize((800, 1120), interpolation=InterpolationMode.BILINEAR),
+    ToTensor()
+])
+
+# Add two more augmentations
+transform = Compose([
+    transform,  # Original transformations
+    RandomHorizontalFlip(p=0.3),  # Augmentation 1
+    RandomVerticalFlip(p=0.3),  # Augmentation 2
+    RandomRotation(degrees=30),  # Augmentation 3
+])
+
 class UNetTestDataClass(Dataset):
     def __init__(self, images_path, transform):
         super(UNetTestDataClass, self).__init__()
