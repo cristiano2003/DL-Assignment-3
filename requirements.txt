@@ -1,0 +1,2 @@
+torchsummary==1.5.1
+torchgeometry==0.1.2
