@@ -15,7 +15,7 @@ First, we need to download the "unet_model.pth" from Google Drive and put it in 
 !pip install  gdown
 import gdown
 
-url = 'https://drive.google.com/file/d/10ZtAN1DTSnlq8rNjhV_6zVIzl0v_qy1R/view?usp=sharing'
+url = 'https://drive.google.com/uc?id=10ZtAN1DTSnlq8rNjhV_6zVIzl0v_qy1R&export=download'
 
 output = '/kaggle/working/unet_model.pth'
 gdown.download(url, output)
