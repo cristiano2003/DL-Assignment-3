@@ -30,7 +30,7 @@ model = smp.Unet(
     classes=3     
 )
 
-checkpoint = torch.load('unet_model.pth')
+checkpoint = torch.load('/kaggle/working/unet_model.pth')
 
 new_state_dict = OrderedDict()
 for k, v in checkpoint['model'].items():
