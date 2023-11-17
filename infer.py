@@ -23,8 +23,8 @@ from collections import OrderedDict
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-model = smp.Unet(
-    encoder_name="resnet50",        
+model = smp.UnetPlusPlus(
+    encoder_name='resnet50', 
     encoder_weights="imagenet",     
     in_channels=3,                  
     classes=3     
@@ -41,7 +41,7 @@ model.load_state_dict(new_state_dict)
 
 
 
-transform = Compose([Resize((512, 512), interpolation=InterpolationMode.BILINEAR),
+transform = Compose([Resize((256, 256), interpolation=InterpolationMode.BILINEAR),
                      PILToTensor()])
 
 
