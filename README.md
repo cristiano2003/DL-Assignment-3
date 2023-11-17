@@ -24,7 +24,7 @@ gdown.download(url, output)
 Step 3:
 
 ```python
-!git clone https://github.com/cristiano2003/DL-Assignment-3.git
+!git clone https://github.com/cristiano2003/UnetPolyp-Semantic-Segmentation.git
 %cd /kaggle/working/UnetPolyp-Semantic-Segmentation/
 !pip install -r requirements.txt
 !pip install segmentation_models_pytorch
