@@ -1,4 +1,5 @@
 import pandas as pd
+sys.path.append(os.getcwd())
 from mask2csv import mask2string
 import os 
 import sys
@@ -67,9 +68,7 @@ for _, (img, path, H, W) in enumerate(test_dataloader):
         mask2img = Resize((h[i].item(), w[i].item()), interpolation=InterpolationMode.NEAREST)(ToPILImage()(F.one_hot(torch.argmax(predicted_mask[i], 0)).permute(2, 0, 1).float()))
         mask2img.save(os.path.join("/kaggle/working/predicted_masks/", filename))
 
-
-MASK_DIR_PATH = '/kaggle/working/predicted_masks' 
-dir = MASK_DIR_PATH
+dir = '/kaggle/working/predicted_masks'
 res = mask2string(dir)
 df = pd.DataFrame(columns=['Id', 'Expected'])
 df['Id'] = res['ids']
