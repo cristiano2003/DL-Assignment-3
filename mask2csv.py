@@ -61,10 +61,3 @@ def mask2string(dir):
     return r
 
 
-dir ='/kaggle/working/predicted_masks' # change this to the path to your output mask folder
-res = mask2string(dir) 
-df = pd.DataFrame(columns=['Id', 'Expected'])
-df['Id'] = res['ids']
-df['Expected'] = res['strings']
-
-df.to_csv(r'output.csv', index=False)
