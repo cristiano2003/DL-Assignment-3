@@ -3,8 +3,9 @@
 Name: Nguyen Trung Truc
 Student ID: 20214936
 
+
 Step 1:
-Add data "bkai-igh-neopolyp" dataset to /kaggle/input/
+Add  "bkai-igh-neopolyp" dataset to /kaggle/input/
 
 Step 2:
 First, we need to download the "unet_model.pth" from Google Drive and put it in "/kaggle/working/"
