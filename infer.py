@@ -72,4 +72,4 @@ res = mask2string(dir)
 df = pd.DataFrame(columns=['Id', 'Expected'])
 df['Id'] = res['ids']
 df['Expected'] = res['strings']
-df.to_csv(r'output.csv', index=False)
+df.to_csv(r'/kaggle/working/output.csv', index=False)
