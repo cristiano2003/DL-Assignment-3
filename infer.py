@@ -1,4 +1,5 @@
 import pandas as pd
+import sys
 sys.path.append(os.getcwd())
 from mask2csv import mask2string
 import os 
