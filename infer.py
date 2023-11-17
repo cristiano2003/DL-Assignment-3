@@ -1,8 +1,8 @@
 import pandas as pd
 import sys
+import os
 sys.path.append(os.getcwd())
 from mask2csv import mask2string
-import os 
 import sys
 import numpy as np
 from PIL import Image
