@@ -8,14 +8,11 @@ import numpy as np
 from PIL import Image
 import cv2 as cv
 import time
-import imageio
-import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim import lr_scheduler
-from torch import Tensor
 from torch.utils.data import Dataset, DataLoader, random_split, ConcatDataset
 from torchvision.transforms import *
 from collections import OrderedDict
@@ -32,7 +29,7 @@ model = smp.UnetPlusPlus(
     classes=3     
 )
 
-checkpoint = torch.load('/kaggle/working/unet_model.pth')
+checkpoint = torch.load('/kaggle/working/unet_model-3.pth')
 
 new_state_dict = OrderedDict()
 for k, v in checkpoint['model'].items():
